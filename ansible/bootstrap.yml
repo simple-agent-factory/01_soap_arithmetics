@@ -1,0 +1,50 @@
+---
+- name: Bootstrap Arithmetics SOAP service on the DigitalOcean Droplet
+  hosts: all
+  remote_user: root
+
+  vars:
+    service_user: arithmetic-user
+    service_dir: /opt/arithmetics
+    jar_path: /opt/arithmetics/soap-arithmetics.jar
+
+  tasks:
+    - name: Install OpenJDK 21
+      ansible.builtin.apt:
+        name: openjdk-21-jre-headless
+        state: present
+        update_cache: true
+
+    - name: Create service user
+      ansible.builtin.user:
+        name: "{{ service_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: "{{ service_dir }}"
+        create_home: false
+
+    - name: Create service directory
+      ansible.builtin.file:
+        path: "{{ service_dir }}"
+        state: directory
+        owner: "{{ service_user }}"
+        group: "{{ service_user }}"
+        mode: "0755"
+
+    - name: Deploy systemd unit
+      ansible.builtin.template:
+        src: templates/arithmetics.service.j2
+        dest: /etc/systemd/system/arithmetics.service
+        mode: "0644"
+      notify: Reload systemd
+
+    - name: Enable service (start on boot)
+      ansible.builtin.systemd:
+        name: arithmetics
+        enabled: true
+        daemon_reload: true
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
