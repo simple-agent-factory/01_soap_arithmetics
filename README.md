@@ -2,9 +2,11 @@
 
 ## Endpoint
 
-- **SOAP**: `http://arithmetics.ai-maxxing.cc:8081/arithmetics`
-- **WSDL**: `http://arithmetics.ai-maxxing.cc:8081/arithmetics?wsdl`
-- **Health**: `http://arithmetics.ai-maxxing.cc:8081/health`
+- **SOAP**: `https://ai-maxxing.cc/arithmetics`
+- **WSDL**: `https://ai-maxxing.cc/arithmetics?wsdl`
+- **Health**: `https://ai-maxxing.cc/health`
+
+> Port 8081 is internal only. Nginx terminates TLS on 443 and proxies to `127.0.0.1:8081`.
 
 ## Operations
 
@@ -67,15 +69,32 @@ The service starts on port `8081`:
 
 ## Server Provisioning (Ansible)
 
-The `ansible/bootstrap.yml` playbook provisions a fresh Ubuntu droplet: installs OpenJDK 21, creates the `arithmetic-user` system account, creates `/opt/arithmetics/`, and installs + enables the systemd unit.
+`ansible/bootstrap.yml` fully provisions a fresh Ubuntu droplet in one run:
 
-**Run from the `ansible/` directory:**
+| Phase | What happens |
+|---|---|
+| **Java service** | Installs OpenJDK 21, creates `arithmetic-user` system account and `/opt/arithmetics/`, deploys and enables the `arithmetics` systemd unit |
+| **Nginx (HTTP)** | Installs Nginx + Certbot, deploys an HTTP-only config that serves the Let's Encrypt ACME challenge at `/.well-known/acme-challenge/` and redirects everything else to HTTPS |
+| **Certificate** | Runs `certbot certonly --webroot` to obtain a Let's Encrypt cert for `ai-maxxing.cc` (idempotent — skipped if cert already exists) |
+| **Nginx (HTTPS)** | Swaps in the full HTTPS config: TLS on 443 using the obtained cert, proxying all traffic to `127.0.0.1:8081` |
+| **Auto-renewal** | Installs a systemd timer that runs `certbot renew` twice daily and reloads Nginx after a successful renewal |
+
+The two-phase Nginx config (HTTP-only first, HTTPS after cert exists) avoids two pitfalls:
+
+- **Missing SSL option files** — `options-ssl-nginx.conf` and `ssl-dhparams.pem` are only created by the `certbot --nginx` plugin, not by `certbot certonly --webroot`. The HTTPS template therefore inlines equivalent SSL settings (`TLSv1.2+`, session cache, HSTS) instead of referencing those files.
+- **Handler batching** — Ansible handlers fire at the end of the play, so the final Nginx reload is an explicit task immediately after the HTTPS config is deployed rather than a notified handler, ensuring the reload happens while the cert files are already in place.
+
+**Prerequisite:** the `ai-maxxing.cc` DNS A record must point to the droplet IP before running the playbook — Let's Encrypt validates domain ownership over HTTP.
+
+**Run from the repo root:**
 
 ```bash
-ansible-playbook bootstrap.yml -i inventory.ini --private-key ~/.ssh/your_key
+ansible-playbook ansible/bootstrap.yml -i ansible/inventory.ini --private-key ~/.ssh/your_key
 ```
 
 The playbook only needs to be run once per server. Subsequent deploys are handled by CI/CD.
+
+**Adding future services:** edit `ansible/templates/nginx.conf.j2` and add a `location /path/ { proxy_pass http://127.0.0.1:<port>; }` block above the catch-all `location /` block, then re-run the playbook.
 
 ---
 

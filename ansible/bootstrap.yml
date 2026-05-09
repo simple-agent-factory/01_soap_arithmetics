@@ -7,6 +7,9 @@
     service_user: arithmetic-user
     service_dir: /opt/arithmetics
     jar_path: /opt/arithmetics/soap-arithmetics.jar
+    domain: ai-maxxing.cc
+    java_port: 8081
+    certbot_email: a.vergnaud@gmail.com
 
   tasks:
     - name: Install OpenJDK 21
@@ -44,7 +47,113 @@
         enabled: true
         daemon_reload: true
 
+    # --- Nginx + Let's Encrypt ---
+
+    - name: Install Nginx and Certbot
+      ansible.builtin.apt:
+        name:
+          - nginx
+          - certbot
+          - python3-certbot-nginx
+        state: present
+
+    - name: Create webroot for ACME challenges
+      ansible.builtin.file:
+        path: /var/www/certbot
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: "0755"
+
+    - name: Remove default Nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Deploy HTTP-only bootstrap Nginx config (no SSL refs, allows certbot challenge)
+      ansible.builtin.template:
+        src: templates/nginx-bootstrap.conf.j2
+        dest: /etc/nginx/sites-available/{{ domain }}
+        mode: "0644"
+
+    - name: Enable Nginx site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/{{ domain }}
+        dest: /etc/nginx/sites-enabled/{{ domain }}
+        state: link
+
+    - name: Enable and start Nginx with bootstrap config
+      ansible.builtin.systemd:
+        name: nginx
+        enabled: true
+        state: restarted
+
+    - name: Obtain Let's Encrypt certificate
+      ansible.builtin.command:
+        cmd: >
+          certbot certonly --webroot
+          -w /var/www/certbot
+          -d {{ domain }}
+          --email {{ certbot_email }}
+          --agree-tos
+          --non-interactive
+          --keep-until-expiring
+        creates: /etc/letsencrypt/live/{{ domain }}/fullchain.pem
+
+    - name: Deploy full HTTPS Nginx config
+      ansible.builtin.template:
+        src: templates/nginx.conf.j2
+        dest: /etc/nginx/sites-available/{{ domain }}
+        mode: "0644"
+
+    - name: Reload nginx with full HTTPS config
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+
+    - name: Deploy certbot renewal systemd timer (auto-renew)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/certbot-renew.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Certbot renewal
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/bin/certbot renew --quiet --post-hook "systemctl reload nginx"
+      notify: Reload systemd
+
+    - name: Deploy certbot renewal timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/certbot-renew.timer
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Run certbot renewal twice daily
+
+          [Timer]
+          OnCalendar=*-*-* 00,12:00:00
+          RandomizedDelaySec=1h
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+      notify: Reload systemd
+
+    - name: Enable certbot renewal timer
+      ansible.builtin.systemd:
+        name: certbot-renew.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
   handlers:
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
+
+    - name: Reload nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
