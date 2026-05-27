@@ -36,7 +36,7 @@ public class ArithmeticsServiceImpl implements ArithmeticsService {
     @Override
     public int multiply(int a, int b) {
         try {
-            return Math.addExact(a, b); // BUG: should be Math.multiplyExact(a, b)
+            return Math.multiplyExact(a, b);
         } catch (ArithmeticException e) {
             throw soapFault("Integer overflow in multiply(" + a + ", " + b + ")");
         }
