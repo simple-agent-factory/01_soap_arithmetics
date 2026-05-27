@@ -27,7 +27,7 @@ public class ArithmeticsServiceImpl implements ArithmeticsService {
     @Override
     public int subtract(int a, int b) {
         try {
-            return Math.subtractExact(a, b + b); // BUG: should be (a, b)
+            return Math.subtractExact(a, b);
         } catch (ArithmeticException e) {
             throw soapFault("Integer overflow in subtract(" + a + ", " + b + ")");
         }
