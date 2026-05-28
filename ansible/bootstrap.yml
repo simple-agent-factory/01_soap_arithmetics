@@ -9,6 +9,8 @@
     jar_path: /opt/arithmetics/soap-arithmetics.jar
     domain: ai-maxxing.cc
     java_port: 8081
+    static_port: 8443
+    static_root: /var/www/static
     certbot_email: a.vergnaud@gmail.com
 
   tasks:
@@ -60,6 +62,14 @@
     - name: Create webroot for ACME challenges
       ansible.builtin.file:
         path: /var/www/certbot
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: "0755"
+
+    - name: Create static file root
+      ansible.builtin.file:
+        path: "{{ static_root }}"
         state: directory
         owner: www-data
         group: www-data

@@ -35,3 +35,23 @@ server {
         proxy_set_header   X-Forwarded-Proto $scheme;
     }
 }
+
+server {
+    listen {{ static_port }} ssl;
+    server_name {{ domain }};
+
+    ssl_certificate     /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    add_header Strict-Transport-Security "max-age=63072000" always;
+
+    root {{ static_root }};
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
